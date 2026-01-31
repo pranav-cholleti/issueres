@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type, FunctionDeclaration } from "@google/genai";
 
 const getClient = () => {
-  const apiKey = 'AIzaSyDBtBHCupctymdgbJQQ1N5ll1mlnDIX7_w' || process.env.GEMINI_API_KEY;
+  const apiKey =  process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("API Key not found in environment. Please ensure GEMINI_API_KEY is set in .env.local.");
   return new GoogleGenAI({ apiKey });
 };
