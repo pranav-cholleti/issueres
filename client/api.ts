@@ -50,6 +50,14 @@ export const api = {
     return handleJson(res);
   },
   
+  resumeWorkflow: async (owner: string, repo: string, issueId: number) => {
+    const res = await fetch(`${API_BASE}/workflow/${owner}/${repo}/${issueId}/resume`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return handleJson(res);
+  },
+  
   submitFeedback: async (owner: string, repo: string, issueId: number, approved: boolean, feedback?: string) => {
     const res = await fetch(`${API_BASE}/workflow/${owner}/${repo}/${issueId}/feedback`, {
       method: 'POST',

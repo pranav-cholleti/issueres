@@ -9,17 +9,29 @@ interface Props {
 export const Terminal: React.FC<Props> = ({ logs, repo }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true); // Track if user is near bottom
 
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
+  // Track scroll position to determine if user has scrolled up
+  // useEffect(() => {
+  //   const el = containerRef.current;
+  //   if (!el) return;
 
-    // Only auto-scroll when user is already near the bottom
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distanceFromBottom < 40) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [logs]);
+  //   const handleScroll = () => {
+  //     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+  //     // Consider "near bottom" if within 100px of bottom
+  //     isNearBottomRef.current = distanceFromBottom < 10;
+  //   };
+
+  //   el.addEventListener('scroll', handleScroll);
+  //   return () => el.removeEventListener('scroll', handleScroll);
+  // }, []);
+
+  // Only auto-scroll if user was already near the bottom
+  // useEffect(() => {
+  //   if (isNearBottomRef.current && bottomRef.current) {
+  //     bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+  //   }
+  // }, [logs]);
 
   return (
     <div className="bg-slate-900 rounded-xl overflow-hidden shadow-sm border border-slate-800 flex flex-col h-full max-h-[300px]">

@@ -14,7 +14,6 @@ app.use(cors() as unknown as RequestHandler);
 app.use(express.json());
 
 // Connect to MongoDB
-// Use process.env.MONGODB_URI if available, otherwise default to local
 const MONGO_URI = 'mongodb://localhost:27017/issueres';
 mongoose.connect(MONGO_URI)
   .then(() => console.log('Connected to MongoDB'))
@@ -26,19 +25,22 @@ mongoose.connect(MONGO_URI)
 app.get('/api/repos', async (req, res) => {
   try {
     const repos = await RepositoryModel.find();
-    // Enhance with stats
     const stats = await Promise.all(repos.map(async (repo) => {
       const activeWorkflows = await WorkflowStateModel.countDocuments({ 
         repoId: repo._id, 
-        status: { $nin: ['IDLE', 'COMPLETED', 'FAILED'] } 
+        status: { $nin: ['IDLE', 'COMPLETED', 'FAILED', 'PAUSED_QUOTA'] } 
       });
       const failedWorkflows = await WorkflowStateModel.countDocuments({ 
         repoId: repo._id, 
         status: 'FAILED' 
       });
+      const pausedWorkflows = await WorkflowStateModel.countDocuments({ 
+        repoId: repo._id, 
+        status: 'PAUSED_QUOTA' 
+      });
       return { 
         ...repo.toObject(), 
-        stats: { active: activeWorkflows, failed: failedWorkflows } 
+        stats: { active: activeWorkflows, failed: failedWorkflows, paused: pausedWorkflows } 
       };
     }));
     res.json(stats);
@@ -74,7 +76,6 @@ app.get('/api/repos/:owner/:repo/issues', async (req, res) => {
     const gh = new GitHubService(repoDoc.token, owner, repo);
     const issues = await gh.getIssues();
 
-    // Merge with local workflow status
     const workflows = await WorkflowStateModel.find({ repoId: repoDoc._id });
     const merged = issues.map(issue => {
       const wf = workflows.find(w => w.issueId === issue.id);
@@ -112,13 +113,12 @@ app.get('/api/workflow/:owner/:repo/:issueId', async (req, res) => {
 app.post('/api/workflow/:owner/:repo/:issueId/start', async (req, res) => {
   try {
     const { owner, repo, issueId } = req.params;
-    const { issue } = req.body; // Pass full issue object for context
+    const { issue } = req.body;
     const repoDoc = await RepositoryModel.findOne({ owner, repo });
     if (!repoDoc) return res.status(404).json({ error: "Repository not found" });
 
     const id = parseInt(issueId, 10);
 
-    // Initialize or reset state
     let wfDoc = await WorkflowStateModel.findOne({ repoId: repoDoc._id, issueId: id });
     if (!wfDoc) {
       wfDoc = new WorkflowStateModel({
@@ -130,7 +130,7 @@ app.post('/api/workflow/:owner/:repo/:issueId/start', async (req, res) => {
         status: 'IDLE'
       });
     } else {
-        // Reset key fields for restart
+        // Reset for restart
         wfDoc.status = 'IDLE';
         wfDoc.logs = [] as any;
         wfDoc.relevantFiles = [] as any;
@@ -139,17 +139,16 @@ app.post('/api/workflow/:owner/:repo/:issueId/start', async (req, res) => {
         wfDoc.researchHistory = [] as any;
         wfDoc.researchLoopCount = 0;
         wfDoc.error = undefined;
+        wfDoc.lastCompletedCheckpoint = null;
+        wfDoc.pauseReason = null;
+        wfDoc.pauseContext = null;
     }
     await wfDoc.save();
 
-    // Start background process
     const config: GithubConfig = { token: repoDoc.token, owner, repo };
     const workflow = new IssueResolutionWorkflow(config, wfDoc.toObject() as unknown as WorkflowState);
     
-    // Hook up listener to save state
     workflow.subscribe(async (state) => {
-      // We need to map the internal state back to Mongoose document
-      // Note: In a real app, this should be debounced or optimized
       try {
         await WorkflowStateModel.updateOne({ _id: wfDoc._id }, {
            status: state.status,
@@ -161,6 +160,9 @@ app.post('/api/workflow/:owner/:repo/:issueId/start', async (req, res) => {
            error: state.error,
            researchHistory: state.researchHistory,
            researchLoopCount: state.researchLoopCount,
+           lastCompletedCheckpoint: state.lastCompletedCheckpoint,
+           pauseReason: state.pauseReason,
+           pauseContext: state.pauseContext,
            updatedAt: new Date()
         });
       } catch (err) {
@@ -168,7 +170,6 @@ app.post('/api/workflow/:owner/:repo/:issueId/start', async (req, res) => {
       }
     });
 
-    // Fire and forget (or await if we want to block until first step?)
     workflow.start(issue).catch(err => console.error("Workflow execution failed", err));
 
     res.json({ message: "Workflow started", workflowId: wfDoc._id });
@@ -177,7 +178,58 @@ app.post('/api/workflow/:owner/:repo/:issueId/start', async (req, res) => {
   }
 });
 
-// 6. Submit Feedback / Resume
+// 6. Resume Workflow (NEW)
+app.post('/api/workflow/:owner/:repo/:issueId/resume', async (req, res) => {
+  try {
+    const { owner, repo, issueId } = req.params;
+    const repoDoc = await RepositoryModel.findOne({ owner, repo });
+    if (!repoDoc) return res.status(404).json({ error: "Repository not found" });
+
+    const id = parseInt(issueId, 10);
+    const wfDoc = await WorkflowStateModel.findOne({ repoId: repoDoc._id, issueId: id });
+    if (!wfDoc) return res.status(404).json({ error: "Workflow not found" });
+
+    // Verify workflow is in resumable state
+    if (wfDoc.status !== 'PAUSED_QUOTA' && wfDoc.status !== 'AWAITING_HUMAN') {
+      return res.status(400).json({ 
+        error: `Workflow cannot be resumed from status: ${wfDoc.status}` 
+      });
+    }
+
+    const config: GithubConfig = { token: repoDoc.token, owner, repo };
+    const workflow = new IssueResolutionWorkflow(config, wfDoc.toObject() as unknown as WorkflowState);
+    
+    workflow.subscribe(async (state) => {
+        try {
+          await WorkflowStateModel.updateOne({ _id: wfDoc._id }, {
+             status: state.status,
+             logs: state.logs,
+             relevantFiles: state.relevantFiles,
+             patches: state.patches,
+             plan: state.plan,
+             prUrl: state.prUrl,
+             error: state.error,
+             researchHistory: state.researchHistory,
+             researchLoopCount: state.researchLoopCount,
+             lastCompletedCheckpoint: state.lastCompletedCheckpoint,
+             pauseReason: state.pauseReason,
+             pauseContext: state.pauseContext,
+             updatedAt: new Date()
+          });
+        } catch (err) {
+          console.error("Failed to persist state", err);
+        }
+      });
+
+    workflow.resume().catch(err => console.error("Resume failed", err));
+
+    res.json({ message: "Workflow resumed" });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 7. Submit Feedback / Resume
 app.post('/api/workflow/:owner/:repo/:issueId/feedback', async (req, res) => {
   try {
     const { owner, repo, issueId } = req.params;
@@ -202,6 +254,9 @@ app.post('/api/workflow/:owner/:repo/:issueId/feedback', async (req, res) => {
              plan: state.plan,
              prUrl: state.prUrl,
              error: state.error,
+             lastCompletedCheckpoint: state.lastCompletedCheckpoint,
+             pauseReason: state.pauseReason,
+             pauseContext: state.pauseContext,
              updatedAt: new Date()
           });
         } catch (err) {
@@ -217,7 +272,7 @@ app.post('/api/workflow/:owner/:repo/:issueId/feedback', async (req, res) => {
   }
 });
 
-// 7. List Workflows for a Repository
+// 8. List Workflows for a Repository
 app.get('/api/repos/:owner/:repo/workflows', async (req, res) => {
   try {
     const { owner, repo } = req.params;
@@ -233,7 +288,7 @@ app.get('/api/repos/:owner/:repo/workflows', async (req, res) => {
   }
 });
 
-// 8. List Recent Workflows
+// 9. List Recent Workflows
 app.get('/api/workflows/recent', async (req, res) => {
   try {
     const limitParam = (req as any).query?.limit as string | undefined;

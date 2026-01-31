@@ -29,6 +29,15 @@ const WorkflowStateSchema = new mongoose.Schema({
   repoOwner: String,
   repoName: String,
   
+  // NEW: Resumption state for quota exhaustion handling
+  lastCompletedCheckpoint: { type: String, default: null },
+  pauseReason: { type: String, enum: ['QUOTA_EXHAUSTED', null], default: null },
+  pauseContext: {
+    type: Object,
+    default: null,
+    // Structure: { stepName, attemptCount, lastError, timestamp, partialProgress }
+  },
+  
   updatedAt: { type: Date, default: Date.now }
 });
 

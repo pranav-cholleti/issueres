@@ -8,6 +8,8 @@ export enum WorkflowStatus {
   GENERATING_FIX = 'GENERATING_FIX',
   AWAITING_HUMAN = 'AWAITING_HUMAN',
   CREATING_PR = 'CREATING_PR',
+  // Recoverable Pause States
+  PAUSED_QUOTA = 'PAUSED_QUOTA', // Paused due to quota exhaustion, can resume
   // End States
   COMPLETED = 'COMPLETED',
   FAILED = 'FAILED'
@@ -46,6 +48,15 @@ export interface Plan {
   steps: string[];
 }
 
+// Checkpoint tracking for resumption
+export interface PauseContext {
+  stepName: string;         // The step that was executing when paused
+  attemptCount: number;     // Number of retry attempts for this step
+  lastError: string;        // The 429 error message
+  timestamp: string;        // When the pause occurred
+  partialProgress?: any;    // Any partial progress within the step
+}
+
 export interface WorkflowState {
   status: string;
   issue: GithubIssue | null;
@@ -61,6 +72,11 @@ export interface WorkflowState {
   // Research State
   researchHistory: any[]; // Stores the conversation history (User, Model, Tool)
   researchLoopCount: number; // Safety breaker for the loop
+  
+  // Resumption State (NEW)
+  lastCompletedCheckpoint: string | null; // Last successfully completed major step
+  pauseReason: 'QUOTA_EXHAUSTED' | null;
+  pauseContext: PauseContext | null;
 }
 
 export interface GithubConfig {

@@ -7,7 +7,7 @@ import { CodePreview } from '../components/CodePreview';
 import { Terminal } from '../components/Terminal';
 import { ReviewPanel } from '../components/ReviewPanel';
 import { GithubIssue, WorkflowStatus } from '../types';
-import { Play, ArrowLeft, ExternalLink, Activity } from 'lucide-react';
+import { Play, ArrowLeft, ExternalLink, Activity, RotateCw } from 'lucide-react';
 
 export const WorkflowDetail = () => {
   const { owner, repo, issueId } = useParams();
@@ -15,6 +15,7 @@ export const WorkflowDetail = () => {
   const [issue, setIssue] = useState<GithubIssue | null>(location.state?.issue || null);
   const [state, setState] = useState<any>(null);
   const [notFound, setNotFound] = useState(false);
+  const [resuming, setResuming] = useState(false);
   
   // Polling logic
   useEffect(() => {
@@ -52,7 +53,20 @@ export const WorkflowDetail = () => {
 
     await api.startWorkflow(owner, repo, parseInt(issueId), effectiveIssue);
     setIssue(effectiveIssue);
-    setNotFound(false); // Should now exist
+    setNotFound(false);
+  };
+
+  const handleResume = async () => {
+    if (!owner || !repo || !issueId || resuming) return;
+    
+    try {
+      setResuming(true);
+      await api.resumeWorkflow(owner, repo, parseInt(issueId));
+    } catch (e) {
+      console.error('Resume failed:', e);
+    } finally {
+      setResuming(false);
+    }
   };
 
   const handleFeedback = async (approved: boolean, feedback?: string) => {
@@ -67,10 +81,13 @@ export const WorkflowDetail = () => {
       </Layout>
   );
 
+  const isPaused = state?.status === WorkflowStatus.PAUSED_QUOTA;
+  const canResume = isPaused || state?.status === WorkflowStatus.AWAITING_HUMAN;
+
   return (
     <Layout>
       <div className="flex flex-col h-full w-full bg-slate-50">
-        {/* C1. Persistent Header */}
+        {/* Header */}
         <div className="bg-white border-b border-slate-200">
           <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
             <div className="flex items-center gap-4 min-w-0">
@@ -104,10 +121,26 @@ export const WorkflowDetail = () => {
               ) : (
                 <>
                   <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 rounded text-xs font-mono text-slate-600">
+                    <div className={`flex items-center gap-2 px-3 py-1 rounded text-xs font-mono ${
+                      isPaused 
+                        ? 'bg-amber-100 text-amber-800 border border-amber-300' 
+                        : 'bg-slate-100 text-slate-600'
+                    }`}>
                       <Activity size={12} className={state.status !== 'IDLE' && state.status !== 'COMPLETED' ? 'animate-pulse text-brand-600' : ''} />
-                      {state.status}
+                      {isPaused ? 'PAUSED (Quota)' : state.status}
                     </div>
+                    
+                    {isPaused && (
+                      <button
+                        onClick={handleResume}
+                        disabled={resuming}
+                        className="flex items-center gap-2 bg-amber-600 text-white px-3 py-1.5 rounded-md text-xs font-semibold hover:bg-amber-700 shadow-sm disabled:opacity-50"
+                      >
+                        <RotateCw size={14} className={resuming ? 'animate-spin' : ''} />
+                        {resuming ? 'Resuming...' : 'Resume'}
+                      </button>
+                    )}
+                    
                     {(state.status === WorkflowStatus.FAILED || state.status === WorkflowStatus.COMPLETED) && (
                       <button
                         onClick={handleStart}
@@ -123,13 +156,18 @@ export const WorkflowDetail = () => {
                       {state.error}
                     </div>
                   )}
+                  {isPaused && state.pauseContext && (
+                    <div className="max-w-md text-xs text-amber-800 bg-amber-50 px-2.5 py-1 rounded border border-amber-200">
+                      <strong>Step:</strong> {state.pauseContext.stepName} · <strong>Attempt:</strong> #{state.pauseContext.attemptCount}
+                    </div>
+                  )}
                 </>
               )}
             </div>
           </div>
         </div>
 
-        {/* C2. Main Content Area */}
+        {/* Main Content Area */}
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-7xl mx-auto w-full px-6 py-6 space-y-6">
             {state && (
@@ -156,7 +194,7 @@ export const WorkflowDetail = () => {
                   <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Research History</h3>
                   <div className="space-y-3 max-h-[260px] overflow-y-auto pr-1">
                     {state?.researchHistory?.filter((h: any) => h.role === 'tool' || h.functionCall || (h.parts && h.parts.some((p: any) => p.functionCall))).map((msg: any, i: number) => {
-                      const part = msg.parts ? msg.parts[0] : msg; // Gemini format variations
+                      const part = msg.parts ? msg.parts[0] : msg;
                       if (part.functionCall) {
                         return (
                           <div key={i} className="text-xs bg-slate-50 border border-slate-100 p-3 rounded-lg">
@@ -179,7 +217,7 @@ export const WorkflowDetail = () => {
               </div>
             </div>
 
-            {/* C3. Footer: Logs & Review */}
+            {/* Footer: Logs & Review */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
               <div className={(state?.status === WorkflowStatus.AWAITING_HUMAN || state?.status === WorkflowStatus.COMPLETED) ? 'lg:col-span-2' : 'lg:col-span-3'}>
                 <Terminal logs={state?.logs || []} repo={`${owner}/${repo}`} />

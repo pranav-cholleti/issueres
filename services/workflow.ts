@@ -41,11 +41,9 @@ const researchDecisionNode = async (state: WorkflowState): Promise<Partial<Workf
     
     const userMsg = { role: 'user', parts: [{ text: initialPrompt }] };
     currentHistory.push(userMsg);
-    // We don't log the huge system prompt, just start indication
-    // logs.push("[System] Initialized Research Agent context.");
   }
 
-  // Call Agent
+  // Call Agent (this may throw QuotaExhaustedError)
   const response = await getResearchStep(currentHistory);
   const candidates = response.candidates;
   
@@ -78,7 +76,6 @@ const researchToolNode = async (state: WorkflowState, github: GitHubService): Pr
   
   const functionCalls = parts.filter((p: any) => !!p.functionCall);
   if (functionCalls.length === 0) {
-    // Should not happen if logic is correct, but if so, just loop back
     return { logs: [...state.logs, "[System] No tool call found."] };
   }
 
@@ -101,7 +98,6 @@ const researchToolNode = async (state: WorkflowState, github: GitHubService): Pr
         const content = await github.getFileContent(args.path);
         result = content ? `File Content (${content.length} chars):\n${content}` : "File empty or not found.";
         
-        // Save to relevant files context
         if (content) {
           if (!newRelevantFiles.find(f => f.path === args.path)) {
             newRelevantFiles.push({ path: args.path, reason: 'Read by Research Agent', content });
@@ -117,7 +113,6 @@ const researchToolNode = async (state: WorkflowState, github: GitHubService): Pr
       result = `Error: ${e.message}`;
     }
 
-    // Append Tool Response to history
     newHistory.push({
       role: 'user',
       parts: [{
@@ -139,7 +134,6 @@ const researchToolNode = async (state: WorkflowState, github: GitHubService): Pr
 
 const planNode = async (state: WorkflowState) => {
   if (!state.issue) throw new Error("No issue");
-  // Filter only files we have content for
   const validFiles = state.relevantFiles.filter(f => f.content);
   
   if (validFiles.length === 0) {
@@ -226,7 +220,11 @@ export class IssueResolutionWorkflow {
       repoOwner: config.owner,
       repoName: config.repo,
       researchHistory: [],
-      researchLoopCount: 0
+      researchLoopCount: 0,
+      // Resumption fields
+      lastCompletedCheckpoint: null,
+      pauseReason: null,
+      pauseContext: null
     };
 
     this.buildGraph();
@@ -239,9 +237,7 @@ export class IssueResolutionWorkflow {
       logs: update.logs ? update.logs : current.logs
     });
 
-    // Condition to check if research is done
     const checkResearchStatus = (state: WorkflowState) => {
-      // Check last message for finishResearch call
       const lastMsg = state.researchHistory[state.researchHistory.length - 1];
       const parts = lastMsg?.parts || [];
       const hasFinish = parts.some((p: any) => p.functionCall?.name === 'finishResearch');
@@ -257,22 +253,17 @@ export class IssueResolutionWorkflow {
     };
 
     const workflow = new StateGraph<WorkflowState>(reducer)
-      // RESEARCH LOOP
       .addNode(WorkflowStatus.RESEARCH_DECISION, (s) => researchDecisionNode(s))
       .addNode(WorkflowStatus.RESEARCH_TOOL, (s) => researchToolNode(s, this.github))
-      
-      // REST OF FLOW
       .addNode(WorkflowStatus.PLANNING, (s) => planNode(s))
       .addNode(WorkflowStatus.GENERATING_FIX, (s) => generateFixNode(s))
       .addNode(WorkflowStatus.AWAITING_HUMAN, async (s) => ({ logs: [...s.logs, "[System] Paused for Review."] }))
       .addNode(WorkflowStatus.CREATING_PR, (s) => createPrNode(s, this.github))
 
-      // EDGES
       .setEntryPoint(WorkflowStatus.RESEARCH_DECISION)
       
       .addEdge(WorkflowStatus.RESEARCH_DECISION, checkResearchStatus)
       .addEdge(WorkflowStatus.RESEARCH_TOOL, WorkflowStatus.RESEARCH_DECISION)
-      
       .addEdge(WorkflowStatus.PLANNING, WorkflowStatus.GENERATING_FIX)
       .addEdge(WorkflowStatus.GENERATING_FIX, WorkflowStatus.AWAITING_HUMAN);
 
@@ -299,7 +290,6 @@ export class IssueResolutionWorkflow {
     this.listeners.forEach(l => l(this.state));
   }
 
-  // Load issues wrapper for the service
   async loadIssues() {
     return await this.github.getIssues();
   }
@@ -316,19 +306,32 @@ export class IssueResolutionWorkflow {
       error: undefined,
       prUrl: undefined,
       researchHistory: [],
-      researchLoopCount: 0
+      researchLoopCount: 0,
+      lastCompletedCheckpoint: null,
+      pauseReason: null,
+      pauseContext: null
     };
     
     this.broadcast(initialState);
     
-    // We return the promise so the backend can await it if desired, 
-    // but in a server env, we might want to let this run in background.
     return this.graph.invoke(initialState, {
       onStateChange: (newState: WorkflowState) => this.broadcast(newState)
     });
   }
 
+  /**
+   * Resume a paused workflow (either from PAUSED_QUOTA or AWAITING_HUMAN)
+   */
   async resume() {
+    if (this.state.status === WorkflowStatus.PAUSED_QUOTA) {
+      const resumeLog = `[System] Resuming from ${this.state.pauseContext?.stepName || 'unknown step'} (attempt ${(this.state.pauseContext?.attemptCount || 0) + 1})`;
+      const updatedState = {
+        ...this.state,
+        logs: [...this.state.logs, resumeLog]
+      };
+      this.broadcast(updatedState);
+    }
+    
     return this.graph.invoke(this.state, {
       onStateChange: (newState: WorkflowState) => this.broadcast(newState)
     });
