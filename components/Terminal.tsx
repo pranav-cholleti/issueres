@@ -8,9 +8,17 @@ interface Props {
 
 export const Terminal: React.FC<Props> = ({ logs, repo }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = containerRef.current;
+    if (!el) return;
+
+    // Only auto-scroll when user is already near the bottom
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom < 40) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [logs]);
 
   return (
@@ -21,7 +29,7 @@ export const Terminal: React.FC<Props> = ({ logs, repo }) => {
           Agent Logs {repo && <span className="text-slate-600 ml-1">@ {repo}</span>}
         </span>
       </div>
-      <div className="p-4 overflow-y-auto font-mono text-xs flex-1 space-y-1.5">
+      <div ref={containerRef} className="p-4 overflow-y-auto font-mono text-xs flex-1 space-y-1.5">
         {logs.length === 0 && <span className="text-slate-600 italic">Waiting for workflow start...</span>}
         {logs.map((log, i) => (
           <div key={i} className="text-slate-300 border-l-2 border-transparent hover:border-slate-700 pl-2">

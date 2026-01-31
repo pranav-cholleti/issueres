@@ -6,6 +6,7 @@ import { IssueResolutionWorkflow } from '../services/workflow';
 import { GitHubService } from '../services/github';
 import { GithubConfig, WorkflowState } from '../types';
 
+
 const app = express();
 const PORT = process.env.PORT || 4000;
 
@@ -14,7 +15,7 @@ app.use(express.json());
 
 // Connect to MongoDB
 // Use process.env.MONGODB_URI if available, otherwise default to local
-const MONGO_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/issueres';
+const MONGO_URI = 'mongodb://localhost:27017/issueres';
 mongoose.connect(MONGO_URI)
   .then(() => console.log('Connected to MongoDB'))
   .catch(err => console.error('MongoDB connection error:', err));

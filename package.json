@@ -11,23 +11,24 @@
     "action": "tsx action/main.ts"
   },
   "dependencies": {
+    "@google/genai": "^1.38.0",
+    "cors": "^2.8.6",
+    "diff": "5.2.0",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "fs": "^0.0.1-security",
+    "lucide-react": "^0.563.0",
+    "mongoose": "^9.1.5",
+    "octokit": "^4.0.2",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "react-router-dom": "6.22.3",
-    "@google/genai": "^1.38.0",
-    "lucide-react": "^0.563.0",
-    "octokit": "^4.0.2",
-    "diff": "5.2.0",
-    "fs": "^0.0.1-security",
-    "mongoose": "^9.1.5",
-    "express": "^5.2.1",
-    "cors": "^2.8.6"
+    "react-router-dom": "6.22.3"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "tsx": "^4.19.2",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0",
-    "tsx": "^4.19.2"
+    "vite": "^6.2.0"
   }
 }
