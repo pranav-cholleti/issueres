@@ -8,17 +8,28 @@ export const Dashboard = () => {
   const [repos, setRepos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [recentWorkflows, setRecentWorkflows] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = () => {
     setLoading(true);
+    setError(null);
     Promise.all([
       api.getRepos(),
       api.getRecentWorkflows(5),
-    ]).then(([reposData, workflowsData]) => {
-      setRepos(reposData);
-      setRecentWorkflows(workflowsData);
-      setLoading(false);
-    });
+    ])
+      .then(([reposData, workflowsData]) => {
+        setRepos(reposData);
+        setRecentWorkflows(workflowsData);
+      })
+      .catch((e) => {
+        const message = e instanceof Error ? e.message : 'Failed to load dashboard data';
+        setError(message);
+        setRepos([]);
+        setRecentWorkflows([]);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   };
 
   useEffect(() => {
@@ -28,9 +39,15 @@ export const Dashboard = () => {
   return (
     <Layout>
       <div className="p-8 max-w-6xl mx-auto w-full">
-        <h1 className="text-2xl font-bold text-slate-900 mb-6">Connected Repositories</h1>
+        <h1 className="text-2xl font-bold text-slate-900 mb-2">Connected Repositories</h1>
+        {loading && (
+          <div className="mb-4 text-sm text-slate-500">Loading...</div>
+        )}
+        {!loading && error && (
+          <div className="mb-4 text-sm text-red-600">{error}</div>
+        )}
 
-        {recentWorkflows.length > 0 && (
+        {!loading && !error && recentWorkflows.length > 0 && (
           <div className="mb-8 bg-white rounded-xl border border-slate-200 shadow-sm p-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wider">Recent Workflows</h2>

@@ -10,6 +10,8 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [showSettings, setShowSettings] = useState(false);
   const [tempConfig, setTempConfig] = useState({ token: '', owner: '', repo: '' });
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const handler = () => setShowSettings(true);
@@ -18,10 +20,19 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   }, []);
 
   const handleSave = async () => {
-    if (tempConfig.token && tempConfig.owner && tempConfig.repo) {
+    if (!tempConfig.token || !tempConfig.owner || !tempConfig.repo || saving) return;
+
+    try {
+      setSaveError(null);
+      setSaving(true);
       await api.connectRepo(tempConfig.owner, tempConfig.repo, tempConfig.token);
       setShowSettings(false);
       window.location.reload(); // Simple reload to refresh list
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed to connect repository';
+      setSaveError(message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -64,7 +75,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
           <div className="bg-white rounded-xl shadow-2xl p-6 w-[400px] max-w-full m-4">
             <h2 className="text-lg font-bold mb-4">Connect Repository</h2>
-            <div className="space-y-4 mb-6">
+            <div className="space-y-4 mb-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">GitHub Personal Access Token</label>
                 <input 
@@ -98,6 +109,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </div>
               </div>
             </div>
+            {saveError && (
+              <div className="mb-4 text-sm text-red-600">
+                {saveError}
+              </div>
+            )}
             <div className="flex justify-end gap-2">
               <button 
                 onClick={() => setShowSettings(false)}
@@ -107,9 +123,14 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               </button>
               <button 
                 onClick={handleSave}
-                className="px-4 py-2 bg-brand-600 text-white rounded-md hover:bg-brand-700"
+                disabled={saving || !tempConfig.token || !tempConfig.owner || !tempConfig.repo}
+                className={`px-4 py-2 bg-brand-600 text-white rounded-md hover:bg-brand-700 ${
+                  saving || !tempConfig.token || !tempConfig.owner || !tempConfig.repo
+                    ? 'opacity-50 cursor-not-allowed'
+                    : ''
+                }`}
               >
-                Connect
+                {saving ? 'Connecting...' : 'Connect'}
               </button>
             </div>
           </div>

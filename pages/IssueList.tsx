@@ -9,15 +9,30 @@ export const IssueList = () => {
   const { owner, repo } = useParams();
   const [issues, setIssues] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadIssues = () => {
+    if (!owner || !repo) return;
+
+    setLoading(true);
+    setError(null);
+
+    api.getIssues(owner, repo)
+      .then(data => {
+        setIssues(data);
+      })
+      .catch((e) => {
+        const message = e instanceof Error ? e.message : 'Failed to load issues';
+        setError(message);
+        setIssues([]);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
 
   useEffect(() => {
-    if (owner && repo) {
-        setLoading(true);
-        api.getIssues(owner, repo).then(data => {
-            setIssues(data);
-            setLoading(false);
-        });
-    }
+    loadIssues();
   }, [owner, repo]);
 
   const getStatusBadge = (status: string | null) => {
@@ -32,17 +47,17 @@ export const IssueList = () => {
     <Layout>
       <div className="flex flex-col h-full w-full">
          <div className="px-8 py-6 border-b border-slate-200 bg-white flex justify-between items-center">
-             <div>
+              <div>
                 <div className="flex items-center gap-2 text-sm text-slate-500 mb-1">
                     <Link to="/dashboard" className="hover:underline">Dashboard</Link>
                     <span>/</span>
                     <span>{owner}</span>
                 </div>
                 <h1 className="text-2xl font-bold text-slate-900">{repo} Issues</h1>
-             </div>
-             <button onClick={() => window.location.reload()} className="p-2 text-slate-500 hover:bg-slate-100 rounded-full">
-                <RefreshCw size={20} />
-             </button>
+              </div>
+              <button onClick={loadIssues} className="p-2 text-slate-500 hover:bg-slate-100 rounded-full">
+                 <RefreshCw size={20} />
+              </button>
          </div>
 
          <div className="flex-1 overflow-auto bg-slate-50 p-8">
@@ -57,9 +72,22 @@ export const IssueList = () => {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {loading ? (
-                            <tr><td colSpan={4} className="p-8 text-center text-slate-500">Loading issues...</td></tr>
-                        ) : issues.map(issue => (
+                        {loading && (
+                          <tr>
+                            <td colSpan={4} className="p-8 text-center text-slate-500">Loading issues...</td>
+                          </tr>
+                        )}
+                        {!loading && error && (
+                          <tr>
+                            <td colSpan={4} className="p-8 text-center text-red-600 text-sm">{error}</td>
+                          </tr>
+                        )}
+                        {!loading && !error && issues.length === 0 && (
+                          <tr>
+                            <td colSpan={4} className="p-8 text-center text-slate-500 text-sm">No issues found.</td>
+                          </tr>
+                        )}
+                        {!loading && !error && issues.map(issue => (
                             <tr key={issue.id} className="hover:bg-slate-50/50 transition-colors">
                                 <td className="px-6 py-4">
                                     <div className="flex items-start gap-3">
