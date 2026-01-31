@@ -1,0 +1,5 @@
+{
+  "name": "IssueRes",
+  "description": "AI-powered GitHub issue resolution agent using Gemini 2.5 Flash. Automates context retrieval, patching, and PR creation with human-in-the-loop verification.",
+  "requestFramePermissions": []
+}

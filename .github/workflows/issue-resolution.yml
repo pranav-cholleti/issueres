@@ -1,0 +1,33 @@
+name: Issue Resolution Agent
+
+on:
+  issues:
+    types: [opened, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+
+jobs:
+  resolve-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm ci
+        # Ensure dependencies like @google/genai, octokit, typescript, tsx are installed
+
+      - name: Run Issue Agent
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: npx tsx action/main.ts
